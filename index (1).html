@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TCP — A Short Introduction · Slide Viewer</title>
+<meta name="description" content="Interactive slide viewer for 'A Brief Intro on Transmission Control Protocol (TCP)' by Rubaya Tamanna, MBSTU.">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --ink:        #11151b;
+    --ink-2:      #171c24;
+    --paper:      #f7f5ef;
+    --maroon:     #8c2323;
+    --maroon-2:   #a83030;
+    --amber:      #e7b24b;
+    --slate:      #8f97a3;
+    --slate-lite: #c7cdd6;
+    --white:      #f4f5f7;
+    --line:       rgba(244,245,247,0.10);
+    --shadow:     0 30px 80px -20px rgba(0,0,0,0.65), 0 10px 30px -10px rgba(0,0,0,0.5);
+    --radius:     10px;
+    --ease:       cubic-bezier(.22,.61,.36,1);
+  }
+
+  *{ box-sizing:border-box; }
+
+  html,body{
+    height:100%;
+    margin:0;
+    background:var(--ink);
+    color:var(--white);
+    font-family:'Manrope',system-ui,sans-serif;
+    overflow:hidden;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  ::selection{ background:var(--maroon-2); color:var(--white); }
+
+  /* faint schematic backdrop — nods to the deck's own network diagrams */
+  body::before{
+    content:"";
+    position:fixed; inset:0;
+    background-image:
+      radial-gradient(circle at 15% 20%, rgba(140,35,35,0.10), transparent 40%),
+      radial-gradient(circle at 85% 80%, rgba(231,178,75,0.06), transparent 45%),
+      repeating-linear-gradient(0deg, rgba(244,245,247,0.025) 0 1px, transparent 1px 48px),
+      repeating-linear-gradient(90deg, rgba(244,245,247,0.025) 0 1px, transparent 1px 48px);
+    pointer-events:none;
+    z-index:0;
+  }
+
+  #app{ position:relative; height:100%; z-index:1; display:flex; flex-direction:column; }
+
+  /* ---------- TOP BAR ---------- */
+  .topbar{
+    position:absolute; top:0; left:0; right:0;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:18px 22px;
+    z-index:20;
+    background:linear-gradient(180deg, rgba(17,21,27,0.92), rgba(17,21,27,0));
+    transition:opacity .5s var(--ease), transform .5s var(--ease);
+  }
+  .topbar.hidden{ opacity:0; transform:translateY(-8px); pointer-events:none; }
+
+  .brand{ display:flex; align-items:center; gap:10px; min-width:0; }
+  .brand-mark{
+    font-family:'IBM Plex Mono',monospace;
+    font-weight:600; font-size:13px; letter-spacing:.04em;
+    color:var(--ink);
+    background:var(--amber);
+    padding:4px 7px; border-radius:4px;
+    flex:none;
+  }
+  .brand-text{ display:flex; flex-direction:column; min-width:0; }
+  .brand-title{ font-size:13.5px; font-weight:700; letter-spacing:.01em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .brand-sub{ font-size:11px; color:var(--slate); font-family:'IBM Plex Mono',monospace; white-space:nowrap; }
+
+  .top-actions{ display:flex; align-items:center; gap:6px; }
+
+  .icon-btn{
+    appearance:none; border:1px solid var(--line); background:rgba(244,245,247,0.04);
+    color:var(--white); width:38px; height:38px; border-radius:8px;
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer; transition:background .2s var(--ease), border-color .2s var(--ease), transform .15s var(--ease);
+  }
+  .icon-btn:hover{ background:rgba(244,245,247,0.09); border-color:rgba(244,245,247,0.22); }
+  .icon-btn:active{ transform:scale(.94); }
+  .icon-btn svg{ width:17px; height:17px; }
+  .icon-btn.active{ background:var(--maroon); border-color:var(--maroon-2); }
+
+  /* ---------- STAGE ---------- */
+  .stage{
+    position:relative;
+    flex:1;
+    display:flex; align-items:center; justify-content:center;
+    padding:88px 90px 128px;
+    min-height:0;
+  }
+
+  .frame{
+    position:relative;
+    max-width:100%; max-height:100%;
+    box-shadow:var(--shadow);
+    border-radius:4px;
+    background:var(--paper);
+    line-height:0;
+  }
+  .frame canvas{ display:block; border-radius:4px; max-width:100%; max-height:100%; }
+
+  .frame::after{
+    content:"";
+    position:absolute; inset:0;
+    border-radius:4px;
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.06);
+    pointer-events:none;
+  }
+
+  #loading{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    flex-direction:column; gap:14px;
+  }
+  .spinner{
+    width:30px; height:30px; border-radius:50%;
+    border:3px solid rgba(244,245,247,0.15); border-top-color:var(--amber);
+    animation:spin 0.9s linear infinite;
+  }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+  #loading span{ font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--slate); letter-spacing:.04em; }
+
+  #errorBox{
+    display:none; max-width:420px; text-align:center; padding:28px;
+    border:1px solid var(--line); border-radius:var(--radius); background:var(--ink-2);
+    font-size:13.5px; color:var(--slate-lite); line-height:1.6;
+  }
+  #errorBox code{ color:var(--amber); font-family:'IBM Plex Mono',monospace; font-size:12px; }
+
+  /* side nav arrows */
+  .nav-arrow{
+    position:absolute; top:50%; transform:translateY(-50%);
+    width:52px; height:52px; border-radius:50%;
+    background:rgba(23,28,36,0.7); backdrop-filter:blur(6px);
+    border:1px solid var(--line);
+    color:var(--white);
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer; z-index:15;
+    transition:background .2s var(--ease), opacity .3s var(--ease), transform .2s var(--ease);
+  }
+  .nav-arrow:hover{ background:var(--maroon); transform:translateY(-50%) scale(1.06); }
+  .nav-arrow:active{ transform:translateY(-50%) scale(.96); }
+  .nav-arrow svg{ width:20px; height:20px; }
+  .nav-arrow.prev{ left:26px; }
+  .nav-arrow.next{ right:26px; }
+  .nav-arrow[disabled]{ opacity:.25; cursor:default; pointer-events:none; }
+
+  .chrome-fade{ transition:opacity .5s var(--ease); }
+  .chrome-hidden{ opacity:0; pointer-events:none; }
+
+  /* ---------- BOTTOM CONTROL BAR ---------- */
+  .bottombar{
+    position:absolute; left:0; right:0; bottom:0;
+    z-index:20;
+    padding:0 22px 20px;
+    background:linear-gradient(0deg, rgba(17,21,27,0.95), rgba(17,21,27,0));
+    transition:opacity .5s var(--ease), transform .5s var(--ease);
+  }
+  .bottombar.hidden{ opacity:0; transform:translateY(8px); pointer-events:none; }
+
+  .segbar{
+    max-width:980px; margin:0 auto 12px;
+    display:flex; align-items:center; gap:14px;
+  }
+
+  .seq-readout{
+    font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--slate-lite);
+    display:flex; align-items:center; gap:6px; flex:none;
+    background:rgba(244,245,247,0.05); border:1px solid var(--line);
+    padding:6px 10px; border-radius:6px;
+  }
+  .seq-readout b{ color:var(--amber); font-weight:600; }
+  .seq-readout .sep{ color:var(--slate); }
+  .seq-title{
+    flex:none; font-size:12.5px; color:var(--slate-lite); font-weight:600;
+    max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    display:none;
+  }
+
+  /* segmented scrubber styled after a TCP field strip */
+  .scrubber{
+    flex:1; display:flex; gap:2px; height:26px; align-items:stretch;
+    background:rgba(244,245,247,0.04); border:1px solid var(--line);
+    border-radius:6px; padding:3px; overflow:hidden;
+  }
+  .tick{
+    flex:1; min-width:2px; border-radius:2px;
+    background:rgba(244,245,247,0.08);
+    cursor:pointer; position:relative;
+    transition:background .15s var(--ease);
+  }
+  .tick:hover{ background:rgba(244,245,247,0.22); }
+  .tick.done{ background:var(--maroon-2); }
+  .tick.current{ background:var(--amber); }
+
+  .tick .tip{
+    position:absolute; bottom:130%; left:50%; transform:translateX(-50%);
+    background:var(--ink-2); border:1px solid var(--line);
+    color:var(--white); font-size:11px; font-family:'IBM Plex Mono',monospace;
+    padding:6px 9px; border-radius:6px; white-space:nowrap;
+    opacity:0; pointer-events:none; transition:opacity .15s var(--ease);
+    box-shadow:var(--shadow);
+  }
+  .tick:hover .tip{ opacity:1; }
+
+  .bottom-actions{ display:flex; align-items:center; gap:6px; flex:none; }
+
+  .controls-row{
+    max-width:980px; margin:0 auto; display:flex; align-items:center; gap:14px;
+  }
+  .play-controls{ display:flex; gap:6px; flex:none; }
+
+  /* ---------- THUMBNAIL DRAWER ---------- */
+  .drawer{
+    position:absolute; left:0; right:0; bottom:0;
+    background:rgba(17,21,27,0.98); backdrop-filter:blur(10px);
+    border-top:1px solid var(--line);
+    z-index:30;
+    padding:20px 22px 24px;
+    transform:translateY(100%);
+    transition:transform .4s var(--ease);
+    max-height:52vh;
+  }
+  .drawer.open{ transform:translateY(0); }
+  .drawer-head{
+    display:flex; align-items:center; justify-content:space-between; margin-bottom:14px;
+  }
+  .drawer-head h2{
+    font-size:12px; margin:0; font-family:'IBM Plex Mono',monospace; letter-spacing:.08em;
+    color:var(--slate); text-transform:uppercase; font-weight:600;
+  }
+  .thumb-grid{
+    display:grid; grid-template-columns:repeat(auto-fill, minmax(150px,1fr));
+    gap:12px; overflow-y:auto; max-height:calc(52vh - 60px); padding-right:4px;
+  }
+  .thumb{
+    cursor:pointer; border-radius:8px; overflow:hidden;
+    border:2px solid transparent; background:var(--paper);
+    transition:border-color .2s var(--ease), transform .15s var(--ease);
+    display:flex; flex-direction:column;
+  }
+  .thumb:hover{ transform:translateY(-2px); }
+  .thumb.active{ border-color:var(--amber); }
+  .thumb canvas{ display:block; width:100%; height:auto; }
+  .thumb-cap{
+    background:var(--ink-2); color:var(--slate-lite); font-size:10.5px;
+    font-family:'IBM Plex Mono',monospace; padding:5px 7px;
+    display:flex; justify-content:space-between; gap:6px;
+  }
+  .thumb-cap b{ color:var(--amber); font-weight:600; }
+  .thumb-cap span{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+  /* ---------- SHORTCUTS PANEL ---------- */
+  .panel{
+    position:absolute; top:70px; right:22px; z-index:40;
+    background:var(--ink-2); border:1px solid var(--line); border-radius:var(--radius);
+    padding:16px 18px; width:230px; box-shadow:var(--shadow);
+    display:none;
+  }
+  .panel.open{ display:block; }
+  .panel h3{ margin:0 0 10px; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--slate); font-family:'IBM Plex Mono',monospace; }
+  .panel dl{ margin:0; display:grid; grid-template-columns:auto 1fr; gap:7px 10px; }
+  .panel dt{
+    font-family:'IBM Plex Mono',monospace; font-size:11px; background:rgba(244,245,247,0.08);
+    border:1px solid var(--line); border-radius:4px; padding:2px 6px; text-align:center; color:var(--amber);
+  }
+  .panel dd{ margin:0; font-size:12px; color:var(--slate-lite); }
+
+  /* ---------- MISC ---------- */
+  @media (max-width:720px){
+    .stage{ padding:76px 16px 116px; }
+    .nav-arrow{ width:42px; height:42px; }
+    .nav-arrow.prev{ left:8px; } .nav-arrow.next{ right:8px; }
+    .brand-sub{ display:none; }
+    .seq-title{ display:none !important; }
+    .panel{ right:12px; width:200px; }
+  }
+  @media (min-width:900px){ .seq-title{ display:block; } }
+
+  @media (prefers-reduced-motion: reduce){
+    *{ animation-duration:0.001ms !important; transition-duration:0.001ms !important; }
+  }
+
+  a.plain{ color:inherit; text-decoration:none; }
+  .visually-hidden{
+    position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap;
+  }
+</style>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- TOP BAR -->
+  <header class="topbar chrome-fade" id="topbar">
+    <div class="brand">
+      <span class="brand-mark">TCP//</span>
+      <div class="brand-text">
+        <span class="brand-title">A Short Introduction to TCP</span>
+        <span class="brand-sub">Rubaya Tamanna · IT25642 · ICT 6127, MBSTU</span>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button class="icon-btn" id="btnShortcuts" title="Keyboard shortcuts" aria-label="Keyboard shortcuts">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 1.7-2.5 1.8-2.5 3.5"/><line x1="12" y1="16.5" x2="12" y2="16.5"/></svg>
+      </button>
+      <button class="icon-btn" id="btnThumbs" title="All slides" aria-label="Show all slides">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      </button>
+      <a class="icon-btn" id="btnDownload" title="Download PDF" aria-label="Download PDF" download>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
+      </a>
+      <button class="icon-btn" id="btnFullscreen" title="Fullscreen" aria-label="Toggle fullscreen">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M16 3h3a2 2 0 0 1 2 2v3"/><path d="M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- SHORTCUTS PANEL -->
+  <div class="panel" id="panelShortcuts">
+    <h3>Keyboard shortcuts</h3>
+    <dl>
+      <dt>&rarr; / Space</dt><dd>Next slide</dd>
+      <dt>&larr;</dt><dd>Previous slide</dd>
+      <dt>Home / End</dt><dd>First / last slide</dd>
+      <dt>F</dt><dd>Fullscreen</dd>
+      <dt>T</dt><dd>Toggle grid view</dd>
+      <dt>Esc</dt><dd>Close panel / grid</dd>
+    </dl>
+  </div>
+
+  <!-- STAGE -->
+  <main class="stage" id="stage">
+    <button class="nav-arrow prev chrome-fade" id="btnPrev" aria-label="Previous slide">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+
+    <div class="frame" id="frame">
+      <canvas id="pageCanvas"></canvas>
+      <div id="loading"><div class="spinner"></div><span>LOADING DECK…</span></div>
+      <div id="errorBox">
+        Couldn't load <code id="pdfNameEcho">TCP-Rubaya-1.4.pdf</code>.<br><br>
+        This viewer expects the PDF in the same folder as this page. If you're testing locally, serve the folder
+        with a local web server (e.g. <code>python3 -m http.server</code>) — opening the file directly
+        (<code>file://</code>) blocks PDF loading in most browsers.
+      </div>
+    </div>
+
+    <button class="nav-arrow next chrome-fade" id="btnNext" aria-label="Next slide">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+    </button>
+  </main>
+
+  <!-- BOTTOM BAR -->
+  <footer class="bottombar chrome-fade" id="bottombar">
+    <div class="segbar">
+      <div class="seq-readout" id="seqReadout">
+        SEQ <b id="curNum">01</b><span class="sep">/</span><span id="totalNum">--</span>
+      </div>
+      <div class="seq-title" id="seqTitle">Title Slide</div>
+      <div class="scrubber" id="scrubber" role="slider" aria-label="Slide scrubber"></div>
+    </div>
+    <div class="controls-row">
+      <div class="play-controls">
+        <button class="icon-btn" id="btnFirst" title="First slide" aria-label="First slide">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 18V6"/><path d="M11 18l-7-6 7-6"/></svg>
+        </button>
+        <button class="icon-btn" id="btnPrev2" title="Previous" aria-label="Previous slide">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
+        <button class="icon-btn" id="btnNext2" title="Next" aria-label="Next slide">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+        </button>
+        <button class="icon-btn" id="btnLast" title="Last slide" aria-label="Last slide">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 18V6"/><path d="M13 18l7-6-7-6"/></svg>
+        </button>
+      </div>
+    </div>
+  </footer>
+
+  <!-- THUMBNAIL DRAWER -->
+  <section class="drawer" id="drawer" aria-label="All slides">
+    <div class="drawer-head">
+      <h2>All Slides</h2>
+      <button class="icon-btn" id="btnCloseDrawer" aria-label="Close grid view">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="thumb-grid" id="thumbGrid"></div>
+  </section>
+
+</div>
+
+<span class="visually-hidden" id="liveRegion" aria-live="polite"></span>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+(function(){
+  "use strict";
+
+  // ---- CONFIG ----------------------------------------------------------
+  var PDF_FILENAME = "TCP-Rubaya-1.4.pdf";
+  var PDF_CANDIDATES = [
+    PDF_FILENAME,
+    "./" + PDF_FILENAME,
+    "https://raw.githubusercontent.com/rubayamist/rubayamist.github.io/main/" + PDF_FILENAME
+  ];
+
+  // Titles map 1:1 to the deck's 16 slides — used for tooltips, captions & labels.
+  var SLIDE_TITLES = [
+    "Title Slide",
+    "Outline",
+    "TCP in OSI",
+    "TCP in Banking",
+    "Transport Layer",
+    "Multiplexing & Demultiplexing",
+    "TCP Addressing",
+    "TCP Header Format",
+    "TCP: Connection (3-Way Handshake)",
+    "TCP: Termination (4-Way Handshake)",
+    "TCP: State Descriptions",
+    "TCP: State Transition Diagram",
+    "TCP Application",
+    "TCP Advantages",
+    "TCP Limitations",
+    "References"
+  ];
+
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+  // ---- STATE -------------------------------------------------------------
+  var pdfDoc = null;
+  var pageCount = 0;
+  var currentPage = 1;
+  var rendering = false;
+  var pendingPage = null;
+  var idleTimer = null;
+  var thumbsBuilt = false;
+
+  // ---- DOM ----------------------------------------------------------------
+  var $ = function(id){ return document.getElementById(id); };
+  var canvas       = $("pageCanvas");
+  var ctx          = canvas.getContext("2d");
+  var loadingEl    = $("loading");
+  var errorBox     = $("errorBox");
+  var frame        = $("frame");
+  var stage        = $("stage");
+  var topbar       = $("topbar");
+  var bottombar    = $("bottombar");
+  var scrubberEl   = $("scrubber");
+  var curNumEl     = $("curNum");
+  var totalNumEl   = $("totalNum");
+  var seqTitleEl   = $("seqTitle");
+  var drawer       = $("drawer");
+  var thumbGrid    = $("thumbGrid");
+  var panelShort   = $("panelShortcuts");
+  var liveRegion   = $("liveRegion");
+  var btnDownload  = $("btnDownload");
+
+  $("pdfNameEcho").textContent = PDF_FILENAME;
+  btnDownload.href = PDF_FILENAME;
+
+  function pad2(n){ return n < 10 ? "0" + n : "" + n; }
+
+  // ---- LOAD PDF (tries candidates in order) --------------------------------
+  function loadPdf(candidateIndex){
+    candidateIndex = candidateIndex || 0;
+    if(candidateIndex >= PDF_CANDIDATES.length){
+      showError();
+      return;
+    }
+    var url = PDF_CANDIDATES[candidateIndex];
+    pdfjsLib.getDocument(url).promise.then(function(doc){
+      pdfDoc = doc;
+      pageCount = doc.numPages;
+      totalNumEl.textContent = pad2(pageCount);
+      buildScrubber();
+      loadingEl.style.display = "none";
+      renderPage(1);
+    }).catch(function(){
+      loadPdf(candidateIndex + 1);
+    });
+  }
+
+  function showError(){
+    loadingEl.style.display = "none";
+    errorBox.style.display = "block";
+  }
+
+  // ---- RENDER MAIN PAGE -----------------------------------------------------
+  function renderPage(num){
+    if(!pdfDoc) return;
+    num = Math.max(1, Math.min(pageCount, num));
+    if(rendering){ pendingPage = num; return; }
+    rendering = true;
+    currentPage = num;
+
+    pdfDoc.getPage(num).then(function(page){
+      var container = stage;
+      var availW = container.clientWidth  - 190; // room for arrows/padding
+      var availH = container.clientHeight - 220;
+      var base = page.getViewport({ scale: 1 });
+      var scale = Math.min(availW / base.width, availH / base.height);
+      scale = Math.max(scale, 0.2);
+      var dpr = window.devicePixelRatio || 1;
+      var viewport = page.getViewport({ scale: scale * dpr });
+
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      canvas.style.width = (viewport.width / dpr) + "px";
+      canvas.style.height = (viewport.height / dpr) + "px";
+
+      var renderTask = page.render({ canvasContext: ctx, viewport: viewport });
+      renderTask.promise.then(function(){
+        rendering = false;
+        updateChrome();
+        if(pendingPage !== null){
+          var p = pendingPage; pendingPage = null;
+          renderPage(p);
+        }
+      }).catch(function(){ rendering = false; });
+    });
+  }
+
+  function updateChrome(){
+    curNumEl.textContent = pad2(currentPage);
+    var title = SLIDE_TITLES[currentPage - 1] || ("Slide " + currentPage);
+    seqTitleEl.textContent = title;
+    liveRegion.textContent = "Slide " + currentPage + " of " + pageCount + ": " + title;
+
+    $("btnPrev").disabled = $("btnPrev2").disabled = $("btnFirst").disabled = (currentPage <= 1);
+    $("btnNext").disabled = $("btnNext2").disabled = $("btnLast").disabled = (currentPage >= pageCount);
+
+    var ticks = scrubberEl.querySelectorAll(".tick");
+    for(var i=0; i<ticks.length; i++){
+      ticks[i].classList.remove("current","done");
+      if(i + 1 < currentPage) ticks[i].classList.add("done");
+      if(i + 1 === currentPage) ticks[i].classList.add("current");
+    }
+
+    if(thumbsBuilt){
+      var thumbs = thumbGrid.querySelectorAll(".thumb");
+      for(var j=0; j<thumbs.length; j++){
+        thumbs[j].classList.toggle("active", (j+1) === currentPage);
+      }
+    }
+  }
+
+  function goTo(n){ renderPage(n); }
+  function next(){ if(currentPage < pageCount) renderPage(currentPage + 1); }
+  function prev(){ if(currentPage > 1) renderPage(currentPage - 1); }
+
+  // ---- SCRUBBER ---------------------------------------------------------
+  function buildScrubber(){
+    scrubberEl.innerHTML = "";
+    for(var i = 1; i <= pageCount; i++){
+      (function(idx){
+        var t = document.createElement("div");
+        t.className = "tick";
+        var tip = document.createElement("div");
+        tip.className = "tip";
+        tip.textContent = pad2(idx) + " · " + (SLIDE_TITLES[idx-1] || "Slide " + idx);
+        t.appendChild(tip);
+        t.addEventListener("click", function(){ goTo(idx); });
+        scrubberEl.appendChild(t);
+      })(i);
+    }
+  }
+
+  // ---- THUMBNAIL DRAWER (lazy render on first open) ----------------------
+  function buildThumbnails(){
+    if(thumbsBuilt || !pdfDoc) return;
+    thumbsBuilt = true;
+    for(var i = 1; i <= pageCount; i++){
+      (function(idx){
+        var wrap = document.createElement("div");
+        wrap.className = "thumb";
+        var c = document.createElement("canvas");
+        var cap = document.createElement("div");
+        cap.className = "thumb-cap";
+        cap.innerHTML = "<b>" + pad2(idx) + "</b><span>" + (SLIDE_TITLES[idx-1] || "Slide " + idx) + "</span>";
+        wrap.appendChild(c);
+        wrap.appendChild(cap);
+        wrap.addEventListener("click", function(){
+          goTo(idx);
+          closeDrawer();
+        });
+        thumbGrid.appendChild(wrap);
+
+        pdfDoc.getPage(idx).then(function(page){
+          var base = page.getViewport({ scale: 1 });
+          var scale = 260 / base.width;
+          var vp = page.getViewport({ scale: scale });
+          c.width = vp.width; c.height = vp.height;
+          var tctx = c.getContext("2d");
+          page.render({ canvasContext: tctx, viewport: vp });
+        });
+      })(i);
+    }
+  }
+
+  // ---- DRAWER TOGGLE -------------------------------------------------------
+  function openDrawer(){
+    buildThumbnails();
+    drawer.classList.add("open");
+    $("btnThumbs").classList.add("active");
+  }
+  function closeDrawer(){
+    drawer.classList.remove("open");
+    $("btnThumbs").classList.remove("active");
+  }
+  function toggleDrawer(){
+    drawer.classList.contains("open") ? closeDrawer() : openDrawer();
+  }
+
+  // ---- SHORTCUTS PANEL ------------------------------------------------------
+  function togglePanel(){ panelShort.classList.toggle("open"); }
+  function closePanel(){ panelShort.classList.remove("open"); }
+
+  // ---- FULLSCREEN -----------------------------------------------------------
+  function toggleFullscreen(){
+    if(!document.fullscreenElement){
+      (document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen || function(){}).call(document.documentElement);
+    } else {
+      (document.exitFullscreen || document.webkitExitFullscreen || function(){}).call(document);
+    }
+  }
+
+  // ---- CHROME AUTO-HIDE ON IDLE ----------------------------------------------
+  function showChrome(){
+    topbar.classList.remove("hidden");
+    bottombar.classList.remove("hidden");
+    document.querySelectorAll(".nav-arrow").forEach(function(el){ el.classList.remove("chrome-hidden"); });
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(hideChrome, 3200);
+  }
+  function hideChrome(){
+    if(drawer.classList.contains("open") || panelShort.classList.contains("open")) return;
+    topbar.classList.add("hidden");
+    bottombar.classList.add("hidden");
+  }
+  ["mousemove","touchstart","keydown","click"].forEach(function(evt){
+    document.addEventListener(evt, showChrome, { passive:true });
+  });
+
+  // ---- EVENT WIRING --------------------------------------------------------
+  $("btnPrev").addEventListener("click", prev);
+  $("btnNext").addEventListener("click", next);
+  $("btnPrev2").addEventListener("click", prev);
+  $("btnNext2").addEventListener("click", next);
+  $("btnFirst").addEventListener("click", function(){ goTo(1); });
+  $("btnLast").addEventListener("click", function(){ goTo(pageCount); });
+  $("btnThumbs").addEventListener("click", toggleDrawer);
+  $("btnCloseDrawer").addEventListener("click", closeDrawer);
+  $("btnFullscreen").addEventListener("click", toggleFullscreen);
+  $("btnShortcuts").addEventListener("click", togglePanel);
+
+  document.addEventListener("keydown", function(e){
+    if(e.key === "ArrowRight" || e.key === " " || e.key === "PageDown"){ e.preventDefault(); next(); }
+    else if(e.key === "ArrowLeft" || e.key === "PageUp"){ e.preventDefault(); prev(); }
+    else if(e.key === "Home"){ e.preventDefault(); goTo(1); }
+    else if(e.key === "End"){ e.preventDefault(); goTo(pageCount); }
+    else if(e.key === "f" || e.key === "F"){ toggleFullscreen(); }
+    else if(e.key === "t" || e.key === "T"){ toggleDrawer(); }
+    else if(e.key === "Escape"){ closeDrawer(); closePanel(); }
+  });
+
+  // swipe support
+  var touchStartX = null;
+  stage.addEventListener("touchstart", function(e){ touchStartX = e.changedTouches[0].clientX; }, { passive:true });
+  stage.addEventListener("touchend", function(e){
+    if(touchStartX === null) return;
+    var dx = e.changedTouches[0].clientX - touchStartX;
+    if(Math.abs(dx) > 50){ dx < 0 ? next() : prev(); }
+    touchStartX = null;
+  }, { passive:true });
+
+  document.addEventListener("click", function(e){
+    if(!panelShort.contains(e.target) && e.target.id !== "btnShortcuts"){ closePanel(); }
+  });
+
+  window.addEventListener("resize", function(){ if(pdfDoc) renderPage(currentPage); });
+
+  showChrome();
+  loadPdf(0);
+})();
+</script>
+</body>
+</html>
